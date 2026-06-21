@@ -25,9 +25,10 @@ class Message(base):
 
     conversation_id = Column(
         Integer,
-        ForeignKey("conversations.id")
-    )
+        ForeignKey("conversations.id",ondelete='CASCADE'),
+        nullable=False
 
+    )
     role = Column(String)
     content = Column(Text)
     created_at = Column(DateTime, default=func.now())

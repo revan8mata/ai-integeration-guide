@@ -1,12 +1,13 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+from datetime import datetime
+
 
 
 
 class Prompt(BaseModel):
     content: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 
@@ -23,3 +24,10 @@ class TokenData(BaseModel):
 class conversation(BaseModel):
     user_id: int
     title: str
+
+class ConversationOut(BaseModel):
+    id: int
+    title: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

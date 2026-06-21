@@ -1,3 +1,4 @@
+from certifi import where
 from fastapi import  FastAPI,status,Depends, HTTPException
 from google import genai
 from sqlalchemy.orm import Session
@@ -7,7 +8,7 @@ import auth
 import schemas
 import users
 import models
-# import conversation
+import conversations
 import oauth2
 import os
 import config
@@ -29,7 +30,7 @@ app.add_middleware(
 
 app.include_router(auth.ROUTER)
 app.include_router(users.ROUTER)
-# app.include_router(conversaion.ROUTER)
+app.include_router(conversations.ROUTER)
 
 client = genai.Client(api_key=settings.api_key)
 
@@ -91,11 +92,11 @@ async def get_conversation(id: int, db: Session = Depends(get_db), current_user 
 
 
 
-app.post("/conversations/{conversation_id}/messages")
+@app.post("/conversations/{conversation_id}/messages",response_model=schemas.gemini)
 async def sdd(conversation_id : int, prompt: schemas.Prompt, db: Session = Depends(get_db), current_user : int = Depends(oauth2.get_current_user)):
-    query = db.execute(select(models.Conversation)
+    query = (db.execute(select(models.Conversation)
                       .where(models.Conversation.id == conversation_id,
-                             models.Conversation.user_id == current_user.id))
+                             models.Conversation.user_id == current_user.id))).scalar_one_or_none() #find out the conversation blongs to the user
     if not query:
         raise HTTPException(status_code=404, detail="conversation not found or not aaccessable by you")
     query2 = db.execute(select(models.Message)
@@ -118,10 +119,39 @@ async def sdd(conversation_id : int, prompt: schemas.Prompt, db: Session = Depen
             {"text": prompt.content}
         ]
     })
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents= prompt.content
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=history
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail=f"LLM error: {str(e)}"
+        )
+    message1 = models.Message(
+        conversation_id=conversation_id,
+        role="user",
+        content=prompt.content
     )
+    db.add(message1)
+    message2 = models.Message(
+        conversation_id=conversation_id,
+        role="assistant",
+        content=response.text
+    )
+    db.add(message2)
+    db.commit()
+    return {"text" : response.text}
+
+@app.get("/conversations", response_model=list[schemas.ConversationOut])
+async def get_conversations(db: Session = Depends(get_db),current_user : int = Depends(oauth2.get_current_user)):
+    conversations = db.execute(select(models.Conversation)
+                               .where(models.Conversation.user_id== current_user.id)
+                               .order_by(models.Conversation.created_at)).scalars().all()
+    print(conversations)
+    return conversations
 
 
 
