@@ -1,3 +1,4 @@
+
 import schemas
 import utilities
 import models
@@ -12,10 +13,10 @@ from sqlalchemy.orm import Session
 
 ROUTER = APIRouter(tags=['login'])
 
-@ROUTER.post("/auth/login", status_code=status.HTTP_201_CREATED)
-async def login(user_credentials : OAuth2PasswordRequestForm = Depends() , db: Session = Depends(get_db),current_user : int = Depends(oauth2.get_current_user)):
+@ROUTER.post("/auth/login", status_code=status.HTTP_200_OK)
+async def login(user_credentials : OAuth2PasswordRequestForm = Depends() , db: Session = Depends(get_db)):
     logger = db.query(models.User).filter(models.User.username == user_credentials.username).first()
-    print(logger.__dict__)
+
     if not logger:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,detail="Incorrect username or password")
 

@@ -30,6 +30,11 @@ class Message(base):
 
     role = Column(String)
     content = Column(Text)
+    created_at = Column(DateTime, default=func.now())
+
+
+
+
 
 
 

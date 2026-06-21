@@ -16,3 +16,10 @@ class UserCreate(BaseModel):
 
 class gemini(BaseModel):
     text: str
+
+class TokenData(BaseModel):
+    id: int | None = None
+
+class conversation(BaseModel):
+    user_id: int
+    title: str
