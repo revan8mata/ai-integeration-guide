@@ -1,0 +1,27 @@
+services:
+  api:
+    build: .
+    container_name: ai_chat_api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+    volumes:
+      - ".:/app:rw"
+
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: ai_chat_db
+    environment:
+      POSTGRES_DB: ai_chat
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

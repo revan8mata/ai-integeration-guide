@@ -2,7 +2,8 @@
 from fastapi import  FastAPI,status,Depends, HTTPException
 from google import genai
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+import documents
+import messages
 import auth
 import schemas
 import users
@@ -30,6 +31,8 @@ app.add_middleware(
 app.include_router(auth.ROUTER)
 app.include_router(users.ROUTER)
 app.include_router(conversations.ROUTER)
+app.include_router(messages.ROUTER)
+app.include_router(documents.ROUTER)
 
 client = genai.Client(api_key=settings.api_key)
 

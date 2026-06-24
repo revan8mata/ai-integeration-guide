@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Text
 from sqlalchemy.sql import func
 from database import base
-
+from pgvector.sqlalchemy import Vector
 
 
 class User(base):
@@ -23,15 +23,25 @@ class Message(base):
     __tablename__ = 'messages'
     id = Column(Integer, primary_key=True)
 
-    conversation_id = Column(
-        Integer,
-        ForeignKey("conversations.id",ondelete='CASCADE'),
-        nullable=False
-
-    )
+    conversation_id = Column(Integer, ForeignKey('conversations.id',ondelete='CASCADE'),nullable=False)
     role = Column(String)
     content = Column(Text)
     created_at = Column(DateTime, default=func.now())
+
+class Document(base):
+    __tablename__ = 'documents'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'))
+    filename = Column(String)
+    created_at = Column(DateTime, default=func.now())
+
+class Chunk(base):
+    __tablename__ = 'chunks'
+    id = Column(Integer, primary_key=True)
+    document_id = Column(Integer, ForeignKey('documents.id',ondelete='CASCADE'))
+    text = Column(Text)
+    embedding = Column(Vector(768))
+
 
 
 

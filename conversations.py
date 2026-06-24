@@ -11,12 +11,6 @@ ROUTER = APIRouter(tags=['conversations'])
 
 client = genai.Client(api_key=settings.api_key)
 
-# @ROUTER.post("/conversation")
-# async def conversations(,current_user : int = Depends(oauth2.get_current_user)):
-#
-#     conv = db.execute(select(models.Conversation)
-
-# DELETE /conversations/{id}
 
 @ROUTER.get("/conversations", response_model=list[schemas.ConversationOut])
 async def get_conversations(db: Session = Depends(get_db),current_user : int = Depends(oauth2.get_current_user)):
@@ -26,7 +20,6 @@ async def get_conversations(db: Session = Depends(get_db),current_user : int = D
     print(conversations)
     return conversations
 # conversations list sidebar
-
 
 
 @ROUTER.post("/", status_code=status.HTTP_201_CREATED,response_model=schemas.gemini)
@@ -46,7 +39,7 @@ async def talk(prompt : schemas.Prompt,db: Session = Depends(get_db), current_us
     db.flush()
     try :
         response = client.models.generate_content(
-        model="gemini-3.5-flash",
+        model="gemini-2.5-flash",
         contents=prompt.content
     )
     except Exception as e:
@@ -65,7 +58,7 @@ async def talk(prompt : schemas.Prompt,db: Session = Depends(get_db), current_us
     return response
 #start conversations
 @ROUTER.post("/conversations/{conversation_id}/messages",response_model=schemas.gemini)
-async def sdd(conversation_id : int, prompt: schemas.Prompt, db: Session = Depends(get_db), current_user : int = Depends(oauth2.get_current_user)):
+async def conversation (conversation_id : int, prompt: schemas.Prompt, db: Session = Depends(get_db), current_user : int = Depends(oauth2.get_current_user)):
     query = (db.execute(select(models.Conversation)
                       .where(models.Conversation.id == conversation_id,
                              models.Conversation.user_id == current_user.id))).scalar_one_or_none() #find out the conversation blongs to the user
@@ -133,11 +126,14 @@ async def delete_conversation(id : int ,
     #delete conversations
 
 @ROUTER.patch('/conversations/{id}', status_code=status.HTTP_200_OK)
-async def update_conversation(id : int ,db: Session = Depends(get_db),current_user: int = Depends(oauth2.get_current_user)):
-    conversation = db.execute(select(models.Conversation).where(models.Conversation.id == id,)).scalar_one_or_none()
+async def update_conversation(id : int ,title : str,db: Session = Depends(get_db),current_user: int = Depends(oauth2.get_current_user)):
+    conversation = db.execute(select(models.Conversation).where(models.Conversation.id == id,
+                                                                models.Conversation.user_id == current_user.id)).scalar_one_or_none()
     if not conversation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail="conversation not found")
-    patched_name = models.Conversation.title(
-
-    )
+    conversation.title = title
+    # patched_name = models.Conversation( title = title)
+    db.commit()
+    db.refresh(conversation)
+    return conversation
     #update the conversation title
