@@ -54,7 +54,7 @@ async def post_docs(file: UploadFile = File(...),db: Session = Depends(get_db),c
         )
         db.add(embed)
     db.commit()
-    return  {"text" : "doc uploaded successfully", "doc_id" = docs.id}
+    return  {"text" : "doc uploaded successfully", "doc_id" : docs.id}
 # @ROUTER.get('/')
 # async def get_docs(db: Session = Depends(get_db),current_user : int = Depends(oauth2.get_current_user)):
 #
