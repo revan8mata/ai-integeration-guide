@@ -18,11 +18,21 @@ client = genai.Client(api_key=settings.api_key)
 
 @ROUTER.post('/')
 async def post_docs(file: UploadFile = File(...),db: Session = Depends(get_db),current_user : int = Depends(oauth2.get_current_user)):
+
+    user = db.execute(select(models.User)
+                      .where(models.User.id == current_user.id)).scalar_one_or_none()
+                                                                                        #
+    if not user:
+        raise HTTPException(status_code=404, detail="user not found")
+
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="only admins can upload documents")
+
     if file.content_type == "application/pdf":
-        pdf = fitz.open(stream=await file.read(), filetype="pdf")
-        text = ""
-        for page in pdf:
-            text += page.get_text()
+        with fitz.open(stream=await file.read(), filetype="pdf") as pdf:
+            text = ""
+            for page in pdf:
+                text += page.get_text()
     else:
         content = await file.read()
         text = content.decode("utf-8")
@@ -56,8 +66,31 @@ async def post_docs(file: UploadFile = File(...),db: Session = Depends(get_db),c
         db.add(embed)
     db.commit()
     return  {"text" : "doc uploaded successfully", "doc_id" : docs.id}
+
+
 # @ROUTER.get('/')
 # async def get_docs(db: Session = Depends(get_db),current_user : int = Depends(oauth2.get_current_user)):
+#     user = db.execute(select(models.User)
+#                       .where(models.User.id == current_user.id)).scalar_one_or_none()
+#
+#     if not user:
+#         raise HTTPException(status_code=404, detail="user not found")
+#
+#     if not user.is_admin:
+#         raise HTTPException(status_code=403, detail="only admins can upload documents")
+
+
+
+
+
+
+
+
+
+
+
+
+
 #
 #
 # @ROUTER.delete('/{id}')
