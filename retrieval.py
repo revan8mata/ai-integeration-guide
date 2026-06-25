@@ -20,7 +20,7 @@ async def get_relevant_chunks(query: str,user_id: int, db: Session) -> str:
     ).scalars().all()
     return "\n\n".join([chunk.text for chunk in results])
 
-
+# verctor comperasion point
 
 
     # 1. embed the query
