@@ -3,7 +3,7 @@ from sqlalchemy import select
 import models
 from google.genai import types
 
-async def get_relevant_chunks(query: str, db: Session) -> str:
+async def get_relevant_chunks(query: str,user_id: int, db: Session) -> str:
     result = client.models.embed_content(
         model="gemini-embedding-001",
         contents=query,
@@ -13,12 +13,14 @@ async def get_relevant_chunks(query: str, db: Session) -> str:
 
     results = db.execute(
         select(models.Chunk)
+        .join(models.Document)
+        .where(models.Document.user_id == user_id)
         .order_by(models.Chunk.embedding.cosine_distance(query_vector))
         .limit(5)
     ).scalars().all()
     return "\n\n".join([chunk.text for chunk in results])
 
-
+# verctor comperasion point
 
 
     # 1. embed the query

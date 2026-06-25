@@ -67,36 +67,32 @@ async def post_docs(file: UploadFile = File(...),db: Session = Depends(get_db),c
     db.commit()
     return  {"text" : "doc uploaded successfully", "doc_id" : docs.id}
 
+@ROUTER.get('/')
+async def get_docs(db: Session = Depends(get_db),current_user : int = Depends(oauth2.get_current_user)):
+    query = db.execute(select(models.Document)
+    .where(models.Document.user_id == current_user.id)
+             .order_by(models.Document.created_at)
+                       ).scalars().all()
 
-# @ROUTER.get('/')
-# async def get_docs(db: Session = Depends(get_db),current_user : int = Depends(oauth2.get_current_user)):
-#     user = db.execute(select(models.User)
-#                       .where(models.User.id == current_user.id)).scalar_one_or_none()
-#
-#     if not user:
-#         raise HTTPException(status_code=404, detail="user not found")
-#
-#     if not user.is_admin:
-#         raise HTTPException(status_code=403, detail="only admins can upload documents")
+    return query
 
 
+@ROUTER.delete('/{id}')
+async def delete_docs(id: int,db: Session = Depends(get_db),current_user : int = Depends(oauth2.get_current_user)):
+
+    doc = db.execute(select(models.Document)
+    .where(models.Document.id == id,
+           models.Document.user_id == current_user.id)
+    .scalar_one_or_none())
+
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    db.delete(doc)
+    db.commit()
+    return {"message": "document deleted"}
 
 
 
-
-
-
-
-
-
-
-
-#
-#
-# @ROUTER.delete('/{id}')
-# async def delete_docs(id: int,db: Session = Depends(get_db),current_user : int = Depends(oauth2.get_current_user)):
-#
-#
 # return
 
 # text = "the cat sat on the mat and looked around"
