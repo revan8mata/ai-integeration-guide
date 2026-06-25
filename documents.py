@@ -71,6 +71,7 @@ async def get_docs(db: Session = Depends(get_db),current_user : int = Depends(oa
 
 @ROUTER.delete('/{id}')
 async def delete_docs(id: int,db: Session = Depends(get_db),current_user : int = Depends(oauth2.get_current_user)):
+
     doc = db.execute(select(models.Document)
     .where(models.Document.id == id,
            models.Document.user_id == current_user.id)
