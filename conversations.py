@@ -18,7 +18,7 @@ async def get_conversations(db: Session = Depends(get_db),current_user : int = D
     conversations = db.execute(select(models.Conversation)
                                .where(models.Conversation.user_id== current_user.id)
                                .order_by(models.Conversation.created_at)).scalars().all()
-    print(conversations)
+
     return conversations
 # conversations list sidebar
 
@@ -40,7 +40,7 @@ async def talk(prompt : schemas.Prompt,db: Session = Depends(get_db), current_us
     db.add(message)
     db.flush()
 
-    retrieval = await get_relevant_chunks(prompt.content, db)
+    retrieval = await get_relevant_chunks(prompt.content,current_user.id, db)
     try :
         response = client.models.generate_content(
         model="gemini-2.5-flash",
@@ -93,7 +93,7 @@ async def conversation (conversation_id : int, prompt: schemas.Prompt, db: Sessi
             {"text": prompt.content}
         ]
     })
-    retrieval = await get_relevant_chunks(prompt.content, db)
+    retrieval = await get_relevant_chunks(prompt.content,current_user.id, db)
     history.insert(0, {
         "role": "user",
         "parts": [{"text": f"""Use ONLY this context to answer questions. If not in context, say you don't know.
