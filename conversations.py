@@ -7,6 +7,7 @@ from sqlalchemy import select
 import schemas
 from google import genai
 from config import settings
+from retrieval import get_relevant_chunks
 ROUTER = APIRouter(tags=['conversations'])
 
 client = genai.Client(api_key=settings.api_key)
@@ -28,6 +29,7 @@ async def talk(prompt : schemas.Prompt,db: Session = Depends(get_db), current_us
         user_id=current_user.id,
         title=prompt.content[:40]
     )
+
     db.add(conversation)
     db.flush()
     message = models.Message(
@@ -37,10 +39,16 @@ async def talk(prompt : schemas.Prompt,db: Session = Depends(get_db), current_us
     )
     db.add(message)
     db.flush()
+
+    retrieval = await get_relevant_chunks(prompt.content, db)
     try :
         response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=prompt.content
+        contents= f"""Answer the user's question using ONLY the context below. If the answer isn't in the context, say you don't know.
+Context:
+{retrieval}
+
+User question: {prompt.content}"""
     )
     except Exception as e:
         db.rollback()
@@ -48,6 +56,7 @@ async def talk(prompt : schemas.Prompt,db: Session = Depends(get_db), current_us
             status_code=503,
             detail=f"llm error: {str(e)}. try again later"
         )
+
     assistant_message = models.Message(
         conversation_id=conversation.id,
         role="assistant",
@@ -65,9 +74,9 @@ async def conversation (conversation_id : int, prompt: schemas.Prompt, db: Sessi
     if not query:
         raise HTTPException(status_code=404, detail="conversation not found or not aaccessable by you")
     query2 = db.execute(select(models.Message)
-                        .where(models.Message.conversation_id == conversation_id,)
+                        .where(models.Message.conversation_id == conversation_id)
                         .order_by(models.Message.created_at)).scalars().all()        #we can order based on id aswell
-    print(query2)
+
 
     history = []
 
@@ -83,6 +92,13 @@ async def conversation (conversation_id : int, prompt: schemas.Prompt, db: Sessi
         "parts": [
             {"text": prompt.content}
         ]
+    })
+    retrieval = await get_relevant_chunks(prompt.content, db)
+    history.insert(0, {
+        "role": "user",
+        "parts": [{"text": f"""Use ONLY this context to answer questions. If not in context, say you don't know.
+
+    Context:{retrieval}"""}]
     })
     try:
         response = client.models.generate_content(

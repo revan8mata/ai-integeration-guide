@@ -1,9 +1,9 @@
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+import models
+from google.genai import types
 
-
-
-
-
-async def get_relevant_chunks(query: str, user_id: int, db: Session) -> str:
+async def get_relevant_chunks(query: str, db: Session) -> str:
     result = client.models.embed_content(
         model="gemini-embedding-001",
         contents=query,

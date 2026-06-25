@@ -11,6 +11,7 @@ from google import genai
 from config import settings
 from google.genai import types
 
+
 ROUTER = APIRouter(tags=['DOCS'],prefix="/docs")
 
 client = genai.Client(api_key=settings.api_key)
