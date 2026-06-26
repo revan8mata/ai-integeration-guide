@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 from fastapi import  FastAPI, Depends, Body, HTTPException, status, Response , APIRouter,File, UploadFile
 from database import get_db
 from sqlalchemy import select
-from fastapi import File, UploadFile
 import google.genai as genai
 import fitz
 from google import genai
@@ -79,14 +78,19 @@ async def get_docs(db: Session = Depends(get_db),current_user : int = Depends(oa
 
 @ROUTER.delete('/{id}')
 async def delete_docs(id: int,db: Session = Depends(get_db),current_user : int = Depends(oauth2.get_current_user)):
+    user_is_admin = db.execute(select(models.User)
+                      .where(models.User.id == current_user.id)).scalar_one_or_none()
+    if not user_is_admin:
+        raise HTTPException(status_code=404, detail="user not found")
+    if not user_is_admin.is_admin:
+        raise HTTPException(status_code=404, detail="only admins can upload documents")
 
     doc = db.execute(select(models.Document)
-    .where(models.Document.id == id,
-           models.Document.user_id == current_user.id)
+    .where(models.Document.id == id)
     .scalar_one_or_none())
 
     if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user negative")
     db.delete(doc)
     db.commit()
     return {"message": "document deleted"}
