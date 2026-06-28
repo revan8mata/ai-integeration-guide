@@ -19,7 +19,7 @@ client = genai.Client(api_key=settings.api_key)
 async def streameresponse(history, conversation_id,current_user_id ,db):
     full_text = ""
     try:
-        async for chunk in client.aio.models.generate_content_stream(
+        async for chunk in await client.aio.models.generate_content_stream(
                 model="gemini-2.5-flash",
                 contents=history
             ):
@@ -41,7 +41,7 @@ async def streameresponse(history, conversation_id,current_user_id ,db):
     db.commit()
 
 
-@ROUTER.post("/", status_code=status.HTTP_201_CREATED)
+@ROUTER.post("/talk", status_code=status.HTTP_201_CREATED)
 async def talk(prompt : schemas.Prompt,db: Session = Depends(get_db), current_user : int = Depends(oauth2.get_current_user)):
     conversation = models.Conversation(
         user_id=current_user.id,
@@ -69,10 +69,9 @@ async def talk(prompt : schemas.Prompt,db: Session = Depends(get_db), current_us
 
 
     return StreamingResponse(
-    streameresponse(history, conversation.id, current_user.id, db),
+    streameresponse(history, message.conversation_id, current_user.id, db),
     media_type="text/event-stream"
 )
-
 
 #start conversations
 
@@ -113,32 +112,17 @@ async def conversation (conversation_id : int, prompt: schemas.Prompt, db: Sessi
 
     check_rate_limit(current_user.id, "chat", 10, 60)
 
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=history
-        )
-    except Exception as e:
-        db.rollback()
-        r.decr(f"rate_limit:{current_user.id}:chat")
-        raise HTTPException(
-            status_code=503,
-            detail=f"LLM error: {str(e)}"
-        )
     message1 = models.Message(
         conversation_id=conversation_id,
         role="user",
         content=prompt.content
     )
     db.add(message1)
-    message2 = models.Message(
-        conversation_id=conversation_id,
-        role="assistant",
-        content=response.text
-    )
-    db.add(message2)
-    db.commit()
-    return {"text" : response.text}
+    db.flush()
+
+    return StreamingResponse(
+        streameresponse(history, message.conversation_id, current_user.id, db),
+        media_type="text/event-stream")
 # keep going with already existing conversations
 
 @ROUTER.delete('/conversations/{id}', status_code=status.HTTP_204_NO_CONTENT)
