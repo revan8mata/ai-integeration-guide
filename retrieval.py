@@ -1,6 +1,8 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 import models
+from documents import client
+
 from google.genai import types
 
 async def get_relevant_chunks(query: str,user_id: int, db: Session) -> str:

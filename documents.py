@@ -69,7 +69,6 @@ async def post_docs(file: UploadFile = File(...),db: Session = Depends(get_db),c
 @ROUTER.get('/')
 async def get_docs(db: Session = Depends(get_db),current_user : int = Depends(oauth2.get_current_user)):
     query = db.execute(select(models.Document)
-    .where(models.Document.user_id == current_user.id)
              .order_by(models.Document.created_at)
                        ).scalars().all()
 

@@ -1,29 +1,47 @@
+from starlette.responses import StreamingResponse
+
 import models
 import oauth2
 from sqlalchemy.orm import Session
-from fastapi import Cookie, FastAPI, Depends, Body, HTTPException, status, Response , APIRouter
+from fastapi import FastAPI, Depends, Body, HTTPException, status, Response , APIRouter
 from database import get_db
 from sqlalchemy import select
 import schemas
 from google import genai
 from config import settings
 from retrieval import get_relevant_chunks
+from rate_limit import check_rate_limit, r
+
 ROUTER = APIRouter(tags=['conversations'])
 
 client = genai.Client(api_key=settings.api_key)
 
+async def streameresponse(history, conversation_id,current_user_id ,db):
+    full_text = ""
+    try:
+        async for chunk in client.aio.models.generate_content_stream(
+                model="gemini-2.5-flash",
+                contents=history
+            ):
+            full_text += chunk.text
+            yield chunk.text
+    except Exception as e:
+        db.rollback()
+        r.decr(f"rate_limit:{current_user_id}:chat")
+        yield f"error: {str(e)}"
+        return
 
-@ROUTER.get("/conversations", response_model=list[schemas.ConversationOut])
-async def get_conversations(db: Session = Depends(get_db),current_user : int = Depends(oauth2.get_current_user)):
-    conversations = db.execute(select(models.Conversation)
-                               .where(models.Conversation.user_id== current_user.id)
-                               .order_by(models.Conversation.created_at)).scalars().all()
+    assistant_message = models.Message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=full_text
+        )
 
-    return conversations
-# conversations list sidebar
+    db.add(assistant_message)
+    db.commit()
 
 
-@ROUTER.post("/", status_code=status.HTTP_201_CREATED,response_model=schemas.gemini)
+@ROUTER.post("/", status_code=status.HTTP_201_CREATED)
 async def talk(prompt : schemas.Prompt,db: Session = Depends(get_db), current_user : int = Depends(oauth2.get_current_user)):
     conversation = models.Conversation(
         user_id=current_user.id,
@@ -40,43 +58,35 @@ async def talk(prompt : schemas.Prompt,db: Session = Depends(get_db), current_us
     db.add(message)
     db.flush()
 
+    check_rate_limit(current_user.id, "chat", 10, 60)
+
     retrieval = await get_relevant_chunks(prompt.content,current_user.id, db)
-    try :
-        response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents= f"""Answer the user's question using ONLY the context below. If the answer isn't in the context, say you don't know.
-Context:
-{retrieval}
+    history = [f"""Answer the user's question using ONLY the context below. If the answer isn't in the context, say you don't know.
+    Context:
+    {retrieval}
 
-User question: {prompt.content}"""
-    )
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=503,
-            detail=f"llm error: {str(e)}. try again later"
-        )
+    User question: {prompt.content}"""]
 
-    assistant_message = models.Message(
-        conversation_id=conversation.id,
-        role="assistant",
-        content=response.text
-    )
-    db.add(assistant_message)
-    db.commit()
-    return response
+
+    return StreamingResponse(
+    streameresponse(history, conversation.id, current_user.id, db),
+    media_type="text/event-stream"
+)
+
+
 #start conversations
+
+
 @ROUTER.post("/conversations/{conversation_id}/messages",response_model=schemas.gemini)
 async def conversation (conversation_id : int, prompt: schemas.Prompt, db: Session = Depends(get_db), current_user : int = Depends(oauth2.get_current_user)):
     query = (db.execute(select(models.Conversation)
                       .where(models.Conversation.id == conversation_id,
-                             models.Conversation.user_id == current_user.id))).scalar_one_or_none() #find out the conversation blongs to the user
+                             models.Conversation.user_id == current_user.id))).scalar_one_or_none() #find out the conversation that blongs to the user
     if not query:
         raise HTTPException(status_code=404, detail="conversation not found or not aaccessable by you")
     query2 = db.execute(select(models.Message)
                         .where(models.Message.conversation_id == conversation_id)
                         .order_by(models.Message.created_at)).scalars().all()        #we can order based on id aswell
-
 
     history = []
 
@@ -100,6 +110,9 @@ async def conversation (conversation_id : int, prompt: schemas.Prompt, db: Sessi
 
     Context:{retrieval}"""}]
     })
+
+    check_rate_limit(current_user.id, "chat", 10, 60)
+
     try:
         response = client.models.generate_content(
             model="gemini-2.5-flash",
@@ -107,6 +120,7 @@ async def conversation (conversation_id : int, prompt: schemas.Prompt, db: Sessi
         )
     except Exception as e:
         db.rollback()
+        r.decr(f"rate_limit:{current_user.id}:chat")
         raise HTTPException(
             status_code=503,
             detail=f"LLM error: {str(e)}"
@@ -153,3 +167,13 @@ async def update_conversation(id : int ,title : str,db: Session = Depends(get_db
     db.refresh(conversation)
     return conversation
     #update the conversation title
+
+
+@ROUTER.get("/conversations", response_model=list[schemas.ConversationOut])
+async def get_conversations(db: Session = Depends(get_db),current_user : int = Depends(oauth2.get_current_user)):
+    conversations = db.execute(select(models.Conversation)
+                               .where(models.Conversation.user_id== current_user.id)
+                               .order_by(models.Conversation.created_at)).scalars().all()
+
+    return conversations
+# conversations list sidebar
