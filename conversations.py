@@ -1,5 +1,5 @@
 from starlette.responses import StreamingResponse
-
+from llm import generate_stream
 import models
 import oauth2
 from sqlalchemy.orm import Session
@@ -16,15 +16,13 @@ ROUTER = APIRouter(tags=['conversations'])
 
 client = genai.Client(api_key=settings.api_key)
 
-async def streameresponse(history, conversation_id,current_user_id ,db):
+async def streameresponse(history, conversation_id,current_user_id ,db,provider="gemini"):
     full_text = ""
     try:
-        async for chunk in await client.aio.models.generate_content_stream(
-                model="gemini-2.5-flash",
-                contents=history
-            ):
-            full_text += chunk.text
-            yield chunk.text
+        async for chunk in generate_stream(history, provider):
+            full_text += chunk
+            yield chunk
+
     except Exception as e:
         db.rollback()
         r.decr(f"rate_limit:{current_user_id}:chat")
@@ -123,7 +121,7 @@ async def conversation (conversation_id : int, prompt: schemas.Prompt, db: Sessi
     return StreamingResponse(
         streameresponse(history, message.conversation_id, current_user.id, db),
         media_type="text/event-stream")
-# keep going with already existing conversations
+    # keep going with already existing conversations
 
 @ROUTER.delete('/conversations/{id}', status_code=status.HTTP_204_NO_CONTENT)
 async def delete_conversation(id : int ,
