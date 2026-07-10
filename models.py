@@ -44,6 +44,17 @@ class Chunk(base):
     embedding = Column(Vector(768))
 
 
+class Webhooks(base):
+    __tablename__ = 'webhooks'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'))
+    url = Column(String)
+    event_type = Column(String)
+    created_at = Column(DateTime, default=func.now())
+
+
+
+
 
 
 

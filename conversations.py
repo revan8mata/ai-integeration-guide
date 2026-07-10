@@ -1,3 +1,4 @@
+from google.genai._interactions.types import Webhook
 from starlette.responses import StreamingResponse
 from llm import generate_stream
 import models
@@ -7,16 +8,20 @@ from fastapi import FastAPI, Depends, Body, HTTPException, status, Response , AP
 from database import get_db
 from sqlalchemy import select
 import schemas
+from fastapi import BackgroundTasks
 from google import genai
 from config import settings
 from retrieval import get_relevant_chunks
 from rate_limit import check_rate_limit, r
-
+from sqlalchemy.sql import func
+from datetime import date
+import httpx
 ROUTER = APIRouter(tags=['conversations'])
 
 client = genai.Client(api_key=settings.api_key)
 
-async def streameresponse(history, conversation_id,current_user_id ,db,provider="gemini"):
+async def streameresponse(history, conversation_id,  current_user_id,
+                          background_tasks ,event_type: str = None,   payload: dict,   db   ,   provider="gemini"):
     full_text = ""
     try:
         async for chunk in generate_stream(history, provider):
@@ -37,10 +42,14 @@ async def streameresponse(history, conversation_id,current_user_id ,db,provider=
 
     db.add(assistant_message)
     db.commit()
+    if event_type:
+        background_tasks.add_task(fire_webhook, event_type=event_type, payload=payload, db = db, user_id = current_user_id)
+
 
 
 @ROUTER.post("/talk", status_code=status.HTTP_201_CREATED)
-async def talk(prompt : schemas.Prompt,db: Session = Depends(get_db), current_user : int = Depends(oauth2.get_current_user)):
+async def talk(prompt : schemas.Prompt,
+               background_tasks:BackgroundTasks,event_type:str,payload: dict,db: Session = Depends(get_db), current_user : int = Depends(oauth2.get_current_user),provider: str = "gemini"):
     conversation = models.Conversation(
         user_id=current_user.id,
         title=prompt.content[:40]
@@ -66,12 +75,20 @@ async def talk(prompt : schemas.Prompt,db: Session = Depends(get_db), current_us
     User question: {prompt.content}"""]
 
 
+
     return StreamingResponse(
-    streameresponse(history, message.conversation_id, current_user.id, db),
+    streameresponse(history=history,
+    conversation_id=message.conversation_id,
+    current_user_id=current_user.id,
+    db=db,
+    provider=provider,
+    background_tasks=background_tasks,
+    event_type=event_type,
+    payload=payload),
     media_type="text/event-stream"
 )
 
-#start conversations
+#start conversations  event_type: str,   payload: dict,
 
 
 @ROUTER.post("/conversations/{conversation_id}/messages",response_model=schemas.gemini)
@@ -159,3 +176,63 @@ async def get_conversations(db: Session = Depends(get_db),current_user : int = D
 
     return conversations
 # conversations list sidebar
+
+@ROUTER.get('/stats')
+async def get_stats(db: Session = Depends(get_db), current_user: int = Depends(oauth2.get_current_user)):
+    user = db.execute(select(models.User).where(models.User.id == current_user.id)).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail="user not found")
+    if not user.is_admin:
+        raise HTTPException (status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin only")
+
+    total_conversations = db.execute(select(func.count(models.Conversation.id))).scalar()
+    total_messages = db.execute(select(func.count(models.Message.id))).scalar()
+    total_documents = db.execute(select(func.count(models.Document.id))).scalar()
+
+    today = date.today()
+    active_users_today = db.execute(
+        select(func.count(func.distinct(models.Message.conversation_id)))
+        .where(func.date(models.Message.created_at) == today)
+    ).scalar()
+
+    return {
+        "total_conversations": total_conversations,
+        "total_messages": total_messages,
+        "total_documents": total_documents,
+        "active_users_today": active_users_today
+    }
+
+async def fire_webhook(event_type: str, payload: dict, user_id: int, db: Session):
+    webhooks = db.execute(
+        select(models.Webhook)
+        .where(models.Webhook.user_id == user_id,
+               models.Webhook.event_type == event_type)
+    ).scalars().all()
+
+    async with httpx.AsyncClient() as client:
+        for webhook in webhooks:
+            try:
+                await client.post(webhook.url,
+                                  json=payload,
+                                  timeout=5.0)
+
+            except Exception as e:
+                print(f"webhook failed : {e}")
+
+
+
+@ROUTER.post('/webhook', status_code=status.HTTP_201_CREATED)
+async def hook(create: schemas.WebhookCreate,db: Session = Depends(get_db),current_user: int = Depends(oauth2.get_current_user)):
+    query = db.execute(select(models.Webhooks)
+                       .where(models.Webhooks.user_id == current_user.id ,
+                              models.Webhooks.event_type == create.event_type)).scalar_one_or_none()
+    if query:
+        raise HTTPException(status_code=400,detail="webhook already exists")
+    webhook = models.Webhooks(
+        url=create.url,
+        event_type=create.event_type,
+        user_id=current_user.id
+    )
+    db.add(webhook)
+    db.commit()
+    return {"new_webhook": "webhook created"}

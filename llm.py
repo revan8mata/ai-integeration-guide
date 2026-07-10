@@ -4,8 +4,8 @@ from openai import AsyncOpenAI
 from google.genai import types
 from config import settings
 
-gemini_client = genai.Client(api_key=settings.API_KEY)
-openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+gemini_client = genai.Client(api_key=settings.api_key)
+openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
 
 def format_for_openai(contents):
     if isinstance(contents, str):

@@ -2,6 +2,16 @@ from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 
 
+from enum import Enum
+
+class EventType(str, Enum):
+    document_uploaded = "document_uploaded"
+    new_conversation = "new_conversation"
+    delete_conversation = "delete_conversation"
+
+class WebhookCreate(BaseModel):
+    url: str
+    event_type: EventType
 
 
 class Prompt(BaseModel):
