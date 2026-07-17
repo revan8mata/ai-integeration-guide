@@ -16,12 +16,13 @@ from rate_limit import check_rate_limit, r
 from sqlalchemy.sql import func
 from datetime import date
 import httpx
+
 ROUTER = APIRouter(tags=['conversations'])
 
 client = genai.Client(api_key=settings.api_key)
 
-async def streameresponse(history, conversation_id,  current_user_id,
-                          background_tasks ,event_type: str = None,   payload: dict,   db   ,   provider="gemini"):
+async def streameresponse(history, conversation_id,  current_user_id ,
+                          background_tasks ,   db  ,  payload: dict  ,   event_type: str = None   ,    provider="gemini"):
     full_text = ""
     try:
         async for chunk in generate_stream(history, provider):
@@ -37,7 +38,8 @@ async def streameresponse(history, conversation_id,  current_user_id,
     assistant_message = models.Message(
             conversation_id=conversation_id,
             role="assistant",
-            content=full_text
+            content=full_text,
+            provider=provider
         )
 
     db.add(assistant_message)
@@ -49,7 +51,7 @@ async def streameresponse(history, conversation_id,  current_user_id,
 
 @ROUTER.post("/talk", status_code=status.HTTP_201_CREATED)
 async def talk(prompt : schemas.Prompt,
-               background_tasks:BackgroundTasks,event_type:str,payload: dict,db: Session = Depends(get_db), current_user : int = Depends(oauth2.get_current_user),provider: str = "gemini"):
+               background_tasks:BackgroundTasks,db: Session = Depends(get_db), current_user : int = Depends(oauth2.get_current_user),provider: str = "gemini"):
     conversation = models.Conversation(
         user_id=current_user.id,
         title=prompt.content[:40]
@@ -64,7 +66,8 @@ async def talk(prompt : schemas.Prompt,
     )
     db.add(message)
     db.flush()
-
+    event_type = "new_conversation"
+    payload = {"conversation_id": conversation.id , "title" :prompt.content[:40]  }
     check_rate_limit(current_user.id, "chat", 10, 60)
 
     retrieval = await get_relevant_chunks(prompt.content,current_user.id, db)
@@ -141,16 +144,23 @@ async def conversation (conversation_id : int, prompt: schemas.Prompt, db: Sessi
     # keep going with already existing conversations
 
 @ROUTER.delete('/conversations/{id}', status_code=status.HTTP_204_NO_CONTENT)
-async def delete_conversation(id : int ,
+async def delete_conversation(id : int , background_tasks:BackgroundTasks,
                        db: Session = Depends(get_db),
                        current_user:models.User = Depends(oauth2.get_current_user)):
+    conv_id = id
+
 
     dlt_conversation = db.execute(select(models.Conversation).where(models.Conversation.id == id,
                                           models.Conversation.user_id == current_user.id)).scalar_one_or_none()
     if not dlt_conversation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail="conversation not found")
+    title_conversation = dlt_conversation.title
     db.delete(dlt_conversation)
     db.commit()
+    background_tasks.add_task(fire_webhook, event_type="document_uploaded", payload={"conversation_id": conv_id,
+                                                                                     "conversation_title": title_conversation,
+                                                                                     }
+                              , db=db, user_id=current_user.id)
 
     #delete conversations
 
@@ -204,9 +214,9 @@ async def get_stats(db: Session = Depends(get_db), current_user: int = Depends(o
 
 async def fire_webhook(event_type: str, payload: dict, user_id: int, db: Session):
     webhooks = db.execute(
-        select(models.Webhook)
-        .where(models.Webhook.user_id == user_id,
-               models.Webhook.event_type == event_type)
+        select(models.Webhooks)
+        .where(models.Webhooks.user_id == user_id,
+               models.Webhooks.event_type == event_type)
     ).scalars().all()
 
     async with httpx.AsyncClient() as client:

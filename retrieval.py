@@ -1,9 +1,11 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 import models
-from documents import client
-
+from config import settings
+from google import genai
 from google.genai import types
+
+client = genai.Client(api_key=settings.api_key)
 
 async def get_relevant_chunks(query: str,user_id: int, db: Session) -> str:
     result = client.models.embed_content(
