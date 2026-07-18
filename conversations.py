@@ -1,4 +1,5 @@
 from google.genai._interactions.types import Webhook
+from pygments.lexer import default
 from starlette.responses import StreamingResponse
 from llm import generate_stream
 import models
@@ -16,7 +17,7 @@ from rate_limit import check_rate_limit, r
 from sqlalchemy.sql import func
 from datetime import date
 import httpx
-
+import asyncio
 ROUTER = APIRouter(tags=['conversations'])
 
 client = genai.Client(api_key=settings.api_key)
@@ -212,24 +213,35 @@ async def get_stats(db: Session = Depends(get_db), current_user: int = Depends(o
         "active_users_today": active_users_today
     }
 
+
+async def deliver_webhook(webhook, payload):
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post(webhook.url, json=payload, timeout=5.0)
+            return  # success, stop retrying
+        except Exception as e:
+            print(f"webhook failed (attempt {attempt + 1}): {e}")
+            await asyncio.sleep(2 ** attempt)  # 1s, 2s, 4s backoff
+
 async def fire_webhook(event_type: str, payload: dict, user_id: int, db: Session):
     webhooks = db.execute(
-        select(models.Webhooks)
-        .where(models.Webhooks.user_id == user_id,
-               models.Webhooks.event_type == event_type)
+        select(models.Webhook)
+        .where(models.Webhook.user_id == user_id,
+               models.Webhook.event_type == event_type)
     ).scalars().all()
 
-    async with httpx.AsyncClient() as client:
-        for webhook in webhooks:
-            try:
-                await client.post(webhook.url,
-                                  json=payload,
-                                  timeout=5.0)
-
-            except Exception as e:
-                print(f"webhook failed : {e}")
+    tasks = [deliver_webhook(webhook, payload) for webhook in webhooks]
+    await asyncio.gather(*tasks)
 
 
+
+
+    # await asyncio.gather(
+    #     some_async_function(),
+    #     another_async_function(),
+    #     yet_another_async_function()
+    # )
 
 @ROUTER.post('/webhook', status_code=status.HTTP_201_CREATED)
 async def hook(create: schemas.WebhookCreate,db: Session = Depends(get_db),current_user: int = Depends(oauth2.get_current_user)):
