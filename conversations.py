@@ -258,3 +258,5 @@ async def hook(create: schemas.WebhookCreate,db: Session = Depends(get_db),curre
     db.add(webhook)
     db.commit()
     return {"new_webhook": "webhook created"}
+
+# webhook signup
