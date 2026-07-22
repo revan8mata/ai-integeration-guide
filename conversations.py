@@ -13,7 +13,7 @@ from fastapi import BackgroundTasks
 from google import genai
 from config import settings
 from retrieval import get_relevant_chunks
-from rate_limit import check_rate_limit, r
+from rate_limit import check_rate_limit, r, check_token_limit,record_token_usage
 from sqlalchemy.sql import func
 from datetime import date
 import httpx
@@ -25,9 +25,12 @@ client = genai.Client(api_key=settings.api_key)
 async def streameresponse(history, conversation_id,  current_user_id ,
                           background_tasks ,   db  ,  payload: dict  ,   event_type: str = None   ,    provider="gemini"):
     full_text = ""
+    last_metadata = None
     try:
-        async for chunk in generate_stream(history, provider):
+
+        async for chunk , metadata in generate_stream(history, provider):
             full_text += chunk
+            last_metadata = metadata
             yield chunk
 
     except Exception as e:
@@ -35,7 +38,8 @@ async def streameresponse(history, conversation_id,  current_user_id ,
         r.decr(f"rate_limit:{current_user_id}:chat")
         yield f"error: {str(e)}"
         return
-
+    if last_metadata is not None:
+        record_token_usage(current_user_id,last_metadata ,2000)
     assistant_message = models.Message(
             conversation_id=conversation_id,
             role="assistant",
@@ -69,7 +73,10 @@ async def talk(prompt : schemas.Prompt,
     db.flush()
     event_type = "new_conversation"
     payload = {"conversation_id": conversation.id , "title" :prompt.content[:40]  }
+
     check_rate_limit(current_user.id, "chat", 10, 60)
+
+    check_token_limit(current_user.id, 100 )
 
     retrieval = await get_relevant_chunks(prompt.content,current_user.id, db)
     history = [f"""Answer the user's question using ONLY the context below. If the answer isn't in the context, say you don't know.
@@ -130,7 +137,7 @@ async def conversation (conversation_id : int, prompt: schemas.Prompt, db: Sessi
     })
 
     check_rate_limit(current_user.id, "chat", 10, 60)
-
+    check_token_limit(current_user.id, 100)
     message1 = models.Message(
         conversation_id=conversation_id,
         role="user",

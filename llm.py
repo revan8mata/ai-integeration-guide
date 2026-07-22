@@ -24,16 +24,20 @@ async def generate_stream(contents, provider: str = "gemini"):
             model="gemini-2.5-flash",
             contents=contents
         ):
-            yield chunk.text
+            token_count = chunk.usage_metadata.total_token_count if chunk.usage_metadata else None
+            yield (chunk.text, token_count)
 
     elif provider == "openai":
         formatted = format_for_openai(contents)
         async for chunk in await openai_client.chat.completions.create(
             model="gpt-4o",
             messages=formatted,
-            stream=True
+            stream=True,
+            stream_options={"include_usage": True}   #needed this . makes sure meta data is included
         ):
-            yield chunk.choices[0].delta.content or ""
+            text = chunk.choices[0].delta.content or ""
+            token_count = chunk.usage.total_tokens if chunk.usage else None
+            yield (text, token_count)
 
     else:
         raise ValueError(f"unknown provider: {provider}")
