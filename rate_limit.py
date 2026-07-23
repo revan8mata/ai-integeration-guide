@@ -8,7 +8,7 @@ def record_token_usage(user_id: int, token_count: int, window_seconds: int):
 
     if current == token_count:
         r.expire(key, window_seconds)
-
+# first 
 
 def check_token_limit(user_id: int, max_tokens: int):
     key = f"token_limit:{user_id}:chat"

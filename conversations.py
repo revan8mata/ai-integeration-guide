@@ -76,7 +76,6 @@ async def talk(prompt : schemas.Prompt,
 
     check_rate_limit(current_user.id, "chat", 10, 60)
 
-    check_token_limit(current_user.id, 100 )
 
     retrieval = await get_relevant_chunks(prompt.content,current_user.id, db)
     history = [f"""Answer the user's question using ONLY the context below. If the answer isn't in the context, say you don't know.
